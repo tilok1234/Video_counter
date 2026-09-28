@@ -17,7 +17,7 @@ are discarded after processing unless you explicitly save a sample.
 | Part | Status |
 |---|---|
 | Tracking + counting core (Kotlin) | **Implemented and tested**: unit tests, 5-seed simulated sweeps (noise, blackouts, stops, reversals, re-scans, fast walking, camera jerks, far-row slivers), golden tests on real exported model outputs, replay of real model output on a synthetic walk video |
-| Android app | **Implemented, builds in CI** (debug APK artifact). Camera sweep, live overlay + debug HUD, review with ±1 correction, photo mode, video replay, sample capture, model import, settings. Instrumented tests on an emulator in CI. Not yet tried on a physical phone by me |
+| Android app | **Implemented, builds and passes its tests in CI** (debug APK artifact): unit tests plus instrumented tests on an API 34 emulator — LiteRT inference with test models, frame mapping, scan engine, and the full UI flow with the emulated camera and the SIMULATION detector. Camera sweep, live overlay + debug HUD, review with ±1 correction, photo mode, video replay, sample capture, model import, settings. **Not yet tried on a physical phone by me** |
 | Training / export tooling (Python) | **Implemented and verified** end to end on synthetic data with the current Ultralytics/LiteRT versions (train → LiteRT export → export check → decode → video → count) |
 | Pallet detector model | **Does not exist yet.** No pretrained model detects these bases (tested, see [MODEL_TRAINING.md](docs/MODEL_TRAINING.md#step-0-do-pretrained-models-help)). It must be trained on your own labeled footage — the tools and guides for that are here |
 | SIMULATION detector | Plumbing test only: synthetic boxes, camera image ignored, red banner. **Not computer vision** |
@@ -108,3 +108,5 @@ LiteRT 1.4.2, Ultralytics 8.4.164.
 This repository is **public**. `.gitignore` keeps workplace footage, frames, labels,
 captures and model weights out of git — keep it that way. The app stores captures and
 detection logs only in its private storage and exports them only when you choose to.
+It requests only the camera permission (no internet — checked in CI), and its data is
+excluded from cloud backup and phone-to-phone transfer.
