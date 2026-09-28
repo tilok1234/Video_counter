@@ -4,7 +4,7 @@ import android.Manifest
 import android.content.res.Configuration
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -28,6 +28,10 @@ class AppFlowInstrumentedTest {
     @get:Rule(order = 0)
     val permission: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.CAMERA)
 
+    // v2 rule: coroutines are queued on the test dispatcher and run on the UI thread. The v1
+    // rule runs them eagerly on whichever thread resumes them (e.g. the scan engine's worker
+    // via state-flow updates); one CI run with v1 crashed with a layout re-entrance error,
+    // most likely from that. In the app itself composition coroutines run on the main thread.
     @get:Rule(order = 1)
     val compose = createAndroidComposeRule<MainActivity>()
 
