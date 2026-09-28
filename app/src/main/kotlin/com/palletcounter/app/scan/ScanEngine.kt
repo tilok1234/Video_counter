@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -155,15 +156,19 @@ class ScanEngine(
     }
 
     override fun submit(frame: FrameInput) {
-        worker.execute {
-            try {
-                processFrame(frame)
-            } catch (t: Throwable) {
-                Log.e(TAG, "frame processing failed", t)
-                _state.value = _state.value.copy(message = "Frame error: ${t.message}")
-            } finally {
-                busy.set(false)
+        try {
+            worker.execute {
+                try {
+                    processFrame(frame)
+                } catch (t: Throwable) {
+                    Log.e(TAG, "frame processing failed", t)
+                    _state.value = _state.value.copy(message = "Frame error: ${t.message}")
+                } finally {
+                    busy.set(false)
+                }
             }
+        } catch (e: RejectedExecutionException) {
+            busy.set(false) // engine closed between tryBegin() and submit()
         }
     }
 

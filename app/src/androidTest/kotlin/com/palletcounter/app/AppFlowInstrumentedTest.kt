@@ -2,12 +2,14 @@ package com.palletcounter.app
 
 import android.Manifest
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,7 +28,7 @@ class AppFlowInstrumentedTest {
     @get:Rule(order = 1)
     val compose = createAndroidComposeRule<MainActivity>()
 
-    private fun countOnScreen(): Int? = compose.onAllNodes(androidx.compose.ui.test.hasText(" EUR", substring = true))
+    private fun countOnScreen(): Int? = compose.onAllNodes(hasText(" EUR", substring = true))
         .fetchSemanticsNodes()
         .flatMap { it.config.getOrElse(SemanticsProperties.Text) { emptyList() } }
         .firstNotNullOfOrNull { Regex("^(\\d+) EUR$").find(it.text)?.groupValues?.get(1)?.toInt() }
@@ -40,18 +42,20 @@ class AppFlowInstrumentedTest {
 
         // Camera frames drive the simulated walk; the first pallet crosses after ~4 s.
         compose.waitUntil(timeoutMillis = 45_000) { (countOnScreen() ?: 0) >= 2 }
-        compose.onNodeWithText("SIMULATION", substring = true).assertExists()
+        // Banner and HUD both mention the simulation detector.
+        assertTrue(compose.onAllNodes(hasText("SIMULATION", substring = true)).fetchSemanticsNodes().isNotEmpty())
 
         compose.onNodeWithText("FINISH").performClick()
         compose.waitUntil(timeoutMillis = 15_000) {
-            compose.onAllNodes(androidx.compose.ui.test.hasText("Review")).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodes(hasText("Review")).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("SIMULATED DETECTIONS", substring = true).assertExists()
         compose.onNodeWithText("+1 pallet").performClick()
         compose.onNodeWithText("Accept").performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
-            compose.onAllNodes(androidx.compose.ui.test.hasText("START VIDEO SWEEP")).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodes(hasText("START VIDEO SWEEP")).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText("SIMULATED", substring = true).assertExists()
+        // The accepted count is in the history, flagged as simulated.
+        assertTrue(compose.onAllNodes(hasText("SIMULATED", substring = true)).fetchSemanticsNodes().isNotEmpty())
     }
 }

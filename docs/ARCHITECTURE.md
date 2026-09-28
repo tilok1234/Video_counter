@@ -145,9 +145,10 @@ misses can be spotted and corrected with ±1.
 
 ## Region of interest
 
-Detections whose centre is outside the ROI (and that do not overlap it by ≥ 50 %) are
-dropped before tracking. Presets: centre band (0.25–0.85, default), low band, full height
-(for lines stacked in several tiers, so every visible wooden layer is counted), custom.
+A detection is kept only if its centre lies inside the ROI and at least 50 % of its area
+is inside; everything else is dropped before tracking. Presets: centre band (0.25–0.85,
+default), low band, full height (for lines stacked in several tiers, so every visible
+wooden layer is counted), custom.
 The ROI and the count line are configurable in Settings and drawn on the preview
 ("KEEP PALLET BASES IN THIS AREA").
 
