@@ -95,14 +95,14 @@ jobs:
           target: google_apis
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back emulated
           disable-animations: true
-          # Two runs so a crash in the UI flow cannot hide the other results; logcat is kept
-          # for crash diagnosis (it contains only this emulator's synthetic test session).
+          # Separate runs so a crash in the UI flow cannot hide the other results. The UI flow
+          # (camera, rotation, threads) runs three times to catch intermittent failures. Logcat
+          # is kept for crash diagnosis (only this emulator's synthetic test session).
           script: |
             adb logcat -c
             ./gradlew :app:connectedDebugAndroidTest --console=plain -Pandroid.testInstrumentationRunnerArguments.notClass=com.palletcounter.app.AppFlowInstrumentedTest || echo engine >> app/build/android-tests-failed
             mkdir -p app/build/test-xml/part1 && cp -r app/build/outputs/androidTest-results/. app/build/test-xml/part1/
-            ./gradlew :app:connectedDebugAndroidTest --console=plain -Pandroid.testInstrumentationRunnerArguments.class=com.palletcounter.app.AppFlowInstrumentedTest || echo ui >> app/build/android-tests-failed
-            mkdir -p app/build/test-xml/part2 && cp -r app/build/outputs/androidTest-results/. app/build/test-xml/part2/
+            for i in 1 2 3; do ./gradlew :app:connectedDebugAndroidTest --console=plain -Pandroid.testInstrumentationRunnerArguments.class=com.palletcounter.app.AppFlowInstrumentedTest || echo "ui run $i" >> app/build/android-tests-failed; mkdir -p app/build/test-xml/ui$i && cp -r app/build/outputs/androidTest-results/. app/build/test-xml/ui$i/; done
             adb logcat -d -v threadtime > app/build/logcat.txt
             test ! -f app/build/android-tests-failed
       - name: Print instrumented test results
