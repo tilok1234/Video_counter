@@ -95,11 +95,26 @@ jobs:
           target: google_apis
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back emulated
           disable-animations: true
-          script: ./gradlew :app:connectedDebugAndroidTest --console=plain
+          # Two runs so a crash in the UI flow cannot hide the other results; logcat is kept
+          # for crash diagnosis (it contains only this emulator's synthetic test session).
+          script: |
+            adb logcat -c
+            ./gradlew :app:connectedDebugAndroidTest --console=plain -Pandroid.testInstrumentationRunnerArguments.notClass=com.palletcounter.app.AppFlowInstrumentedTest || echo engine >> app/build/android-tests-failed
+            mkdir -p app/build/test-xml/part1 && cp -r app/build/outputs/androidTest-results/. app/build/test-xml/part1/
+            ./gradlew :app:connectedDebugAndroidTest --console=plain -Pandroid.testInstrumentationRunnerArguments.class=com.palletcounter.app.AppFlowInstrumentedTest || echo ui >> app/build/android-tests-failed
+            mkdir -p app/build/test-xml/part2 && cp -r app/build/outputs/androidTest-results/. app/build/test-xml/part2/
+            adb logcat -d -v threadtime > app/build/logcat.txt
+            test ! -f app/build/android-tests-failed
       - name: Print instrumented test results
         if: always()
         run: |
-          find app/build/outputs/androidTest-results -name "*.xml" -print -exec cat {} + || true
+          find app/build/test-xml -name "*.xml" -print -exec cat {} + || true
+          if [ -f app/build/logcat.txt ]; then
+            echo "--- crashes (logcat)"
+            grep -n -A45 "FATAL EXCEPTION" app/build/logcat.txt | head -150 || true
+            echo "--- app log (logcat)"
+            grep -E " (ScanEngine|TfliteYoloDetector|CameraBinder|AndroidRuntime|TestRunner): " app/build/logcat.txt | tail -60 || true
+          fi
       - name: Instrumented test reports
         if: always()
         uses: actions/upload-artifact@v5
