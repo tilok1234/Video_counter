@@ -19,6 +19,8 @@ Film exactly the way you will scan, so training data looks like what the app wil
 * Point at the **bases** of the stacks; bases in the middle-to-lower part of the frame.
 * Walk **along** the line at normal, steady speed (about 1 step per second).
 * Start before the first pallet of the line and stop after the last one.
+* Two-wide lines: walk down the aisle and film the **near** row. The far row behind it
+  (visible through gaps) is not a target — the *one side ×2* mode accounts for it.
 * Use the normal camera app, 1080p or 720p, 30 fps. Higher resolution is not needed.
 * 20–60 s per video is plenty. Many short videos beat a few long ones (variety).
 
