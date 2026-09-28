@@ -125,7 +125,6 @@ def main(argv: list[str] | None = None) -> int:
             project=args.project,
             name=args.name,
             seed=args.seed,
-            single_cls=True,
             plots=True,
             **AUGMENTATION,
         )

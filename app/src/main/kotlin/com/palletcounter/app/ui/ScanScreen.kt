@@ -145,7 +145,7 @@ private fun Hud(state: ScanUiState) {
         ),
         "raw ${s?.rawDetections?.size ?: 0}  roi ${s?.acceptedDetections?.size ?: 0}  tracks $confirmed (+$tentative new, $lost lost)",
         m?.let { "motion $arrow %.2f fw/s  step %.0f%% of pallet%s".format(kotlin.math.abs(it.vx), it.displacementRatio * 100, if (it.stationary) "  STATIONARY" else "") },
-        c?.let { "net ${s?.netCount ?: 0}  L→R ${it.leftToRight}  R→L ${it.rightToLeft}  stitched ${it.stitches}  late ${it.lateTracks}" },
+        c?.let { "net ${s.netCount}  L→R ${it.leftToRight}  R→L ${it.rightToLeft}  stitched ${it.stitches}  late ${it.lateTracks}" },
     )
     Column(Modifier.padding(6.dp).background(Color.Black.copy(alpha = 0.55f)).padding(6.dp)) {
         for (line in lines) Text(line, color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace)

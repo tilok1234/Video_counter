@@ -33,7 +33,7 @@ class TfliteDetector:
         self.interp = load_interpreter(self.model_path, num_threads)
         self.inp = self.interp.get_input_details()[0]
         self.out = self.interp.get_output_details()[0]
-        shape = list(self.inp["shape"])
+        shape = [int(v) for v in self.inp["shape"]]
         self.nchw = shape[1] == 3 and shape[3] != 3
         self.in_h, self.in_w = (shape[2], shape[3]) if self.nchw else (shape[1], shape[2])
         self.pad = int(self.sidecar.get("letterbox_pad_value", 114))

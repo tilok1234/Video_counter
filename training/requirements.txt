@@ -1,0 +1,14 @@
+# Training / export / evaluation (Python 3.10-3.12, Linux x86-64 or macOS; on Windows use WSL2).
+# Versions verified together on 2026-09-28 (see docs/MODEL_TRAINING.md). Install the pinned
+# set up front: otherwise Ultralytics auto-installs litert-torch during the first export,
+# which can change the torch version under a running process.
+ultralytics==8.4.164
+torch==2.13.0
+torchvision==0.28.0
+litert-torch==0.9.4
+ai-edge-litert==2.2.0
+ai-edge-quantizer==0.9.0
+opencv-python-headless>=4.10
+numpy>=1.26
+pillow>=10
+pytest>=8

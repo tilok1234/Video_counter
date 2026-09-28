@@ -2,7 +2,11 @@
 """Export a trained detector to TFLite for the Android app and verify the export.
 
 Steps:
-  1. Ultralytics TFLite export (fp16 by default; int8 needs --data for calibration).
+  1. Ultralytics LiteRT export (``format="litert"``, which replaced ``tflite`` in
+     Ultralytics 8.4.83). Runs on Linux x86-64 and macOS only (on Windows use WSL2).
+     Precision: ``fp32`` (default; the phone's GPU delegate runs it in FP16 anyway),
+     ``w8a32`` (int8 weights, ~4x smaller, no calibration), ``int8`` / ``w8a16`` (static
+     quantization, needs --data for calibration images).
   2. Inspect the model's tensors and work out the output layout / coordinate space.
   3. Optionally compare TFLite detections (decoded exactly like the app does) with the
      PyTorch model on a few images (--check-images).
@@ -13,6 +17,10 @@ Examples::
     python training/export_model.py --weights runs/detect/v1/weights/best.pt --imgsz 416 --out model/
     python training/export_model.py --weights best.pt --imgsz 320 --precision int8 --data dataset/dataset.yaml \\
         --check-images dataset/images/test --out model/ --name eur_pallet_int8
+
+The exported model's input is NCHW float32 and its output is either the raw YOLO head
+(``[1, 4+classes, anchors]``, normalized boxes) or an end-to-end head (``[1, 300, 6]``,
+pixel boxes, YOLO26); the sidecar records which, and the app handles both.
 
 Copy both files to the phone and import them (Settings → Import model), or put them in
 ``app/src/main/assets/models/`` as ``eur_pallet.tflite`` / ``eur_pallet.json`` and rebuild.
@@ -103,23 +111,32 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--weights", type=Path, required=True, help="trained .pt (e.g. runs/detect/v1/weights/best.pt)")
     ap.add_argument("--imgsz", type=int, nargs="+", default=[416],
                     help="model input size: one value (square) or H W. 320-416 for budget phones, 640 for best accuracy")
-    ap.add_argument("--precision", choices=["fp16", "fp32", "int8"], default="fp16")
+    ap.add_argument("--precision", choices=["fp32", "w8a32", "int8", "w8a16"], default="fp32",
+                    help="fp32 (default), w8a32 (dynamic int8 weights), int8 / w8a16 (static, need --data)")
     ap.add_argument("--data", type=Path, help="dataset.yaml (required for int8 calibration)")
     ap.add_argument("--out", type=Path, default=Path("model"))
     ap.add_argument("--name", default="eur_pallet")
     ap.add_argument("--check-images", type=Path, nargs="*", default=[], help="images/folders for the export check")
     ap.add_argument("--check-limit", type=int, default=20)
     ap.add_argument("--conf", type=float, default=0.35, help="suggested operating threshold stored in the sidecar")
+    ap.add_argument("--end2end", action="store_true",
+                    help="export the NMS-free end-to-end head ([1,300,6], YOLO26/YOLOv10 only); default is the raw "
+                         "head with NMS in the app, which works for every YOLO version")
     args = ap.parse_args(argv)
 
-    if args.precision == "int8" and not args.data:
-        ap.error("--precision int8 needs --data <dataset.yaml> for calibration images")
+    if args.precision in ("int8", "w8a16") and not args.data:
+        ap.error(f"--precision {args.precision} needs --data <dataset.yaml> for calibration images")
     imgsz = args.imgsz[0] if len(args.imgsz) == 1 else list(args.imgsz)
 
     from ultralytics import YOLO, __version__ as ul_version
 
     model = YOLO(str(args.weights))
-    kwargs = dict(format="tflite", imgsz=imgsz, half=args.precision == "fp16", int8=args.precision == "int8", nms=False)
+    quantize = {"fp32": None, "w8a32": "w8a32", "int8": 8, "w8a16": "w8a16"}[args.precision]
+    kwargs = dict(format="litert", imgsz=imgsz)
+    if args.end2end:
+        kwargs["nms"] = False  # Ultralytics: nms=False selects the NMS-free one-to-one head
+    if quantize is not None:
+        kwargs["quantize"] = quantize
     if args.data:
         kwargs["data"] = str(args.data)
     exported = Path(model.export(**kwargs))
@@ -135,6 +152,8 @@ def main(argv: list[str] | None = None) -> int:
     check_imgs = [load_rgb(p) for p in check_paths]
     coordinates = detect_coordinates(det, check_imgs)
     names = [model.names[k] for k in sorted(model.names)]
+    if names == ["item"]:  # models trained with single_cls=True lose the class name
+        names = ["eur_pallet_base"]
     targets = ["eur_pallet_base"] if "eur_pallet_base" in names else names
 
     sidecar = {
@@ -142,8 +161,8 @@ def main(argv: list[str] | None = None) -> int:
         "version": datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S"),
         "output_format": fmt,
         "coordinates": coordinates,
-        "input_width": det.in_w,
-        "input_height": det.in_h,
+        "input_width": int(det.in_w),
+        "input_height": int(det.in_h),
         "input_normalization": "zero_one",
         "letterbox_pad_value": 114,
         "classes": names,
@@ -159,19 +178,27 @@ def main(argv: list[str] | None = None) -> int:
     if check_imgs:
         det.sidecar = sidecar
         det.target_classes = {names.index(t) for t in targets}
-        tot = [0, 0, 0]
+        # Compare boxes, not score calibration: each side above --conf must be found by the
+        # other side above conf/2. A decoding/layout error gives ~0 matches.
+        lo = args.conf / 2
+        found_ref = total_ref = found_tfl = total_tfl = 0
         for img in check_imgs:
-            ref = [d for d in torch_predictions(model, img, imgsz, args.conf) if names[d[5]] in targets]
-            got = det.detect(img, conf=args.conf)
-            m, only_pt, only_tfl = match_rate(ref, got)
-            tot = [tot[0] + m, tot[1] + only_pt, tot[2] + only_tfl]
-        total_ref = tot[0] + tot[1]
-        rate = tot[0] / total_ref if total_ref else 1.0
-        print(f"export check on {len(check_imgs)} images: {tot[0]} boxes matched, {tot[1]} only in PyTorch, "
-              f"{tot[2]} only in TFLite (match rate {rate:.0%})")
-        sidecar["metrics"] = {"export_match_rate": round(rate, 4)}
-        if rate < 0.8 and total_ref >= 5:
-            print("WARNING: TFLite detections differ a lot from PyTorch; check precision (try fp32) and imgsz")
+            ref = [d for d in torch_predictions(model, img, imgsz, lo) if names[d[5]] in targets]
+            got = det.detect(img, conf=lo)
+            ref_hi = [d for d in ref if d[4] >= args.conf]
+            got_hi = [d for d in got if d[4] >= args.conf]
+            found_ref += match_rate(ref_hi, got)[0]
+            total_ref += len(ref_hi)
+            found_tfl += match_rate(got_hi, ref)[0]
+            total_tfl += len(got_hi)
+        recall = found_ref / total_ref if total_ref else 1.0
+        precision = found_tfl / total_tfl if total_tfl else 1.0
+        print(f"export check on {len(check_imgs)} images: {found_ref}/{total_ref} PyTorch boxes found by TFLite, "
+              f"{found_tfl}/{total_tfl} TFLite boxes found by PyTorch")
+        sidecar["metrics"] = {"export_recall_vs_pytorch": round(recall, 4), "export_precision_vs_pytorch": round(precision, 4)}
+        if min(recall, precision) < 0.8 and max(total_ref, total_tfl) >= 5:
+            print("WARNING: TFLite detections differ from PyTorch. With --end2end a short training can leave the "
+                  "one-to-one head poorly calibrated; otherwise check --imgsz and precision (try fp32).")
 
     args.out.mkdir(parents=True, exist_ok=True)
     target_model = args.out / f"{args.name}.tflite"

@@ -1,0 +1,5 @@
+# Lightweight data tools (frame extraction, splitting, checking). No deep-learning stack needed.
+# prelabel.py additionally needs training/requirements.txt.
+opencv-python-headless>=4.10
+numpy>=1.26
+pillow>=10
