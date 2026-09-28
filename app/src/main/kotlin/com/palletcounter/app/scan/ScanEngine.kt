@@ -226,8 +226,9 @@ class ScanEngine(
     }
 
     private fun openLog(info: DetectorInfo, notes: String?) {
-        if (logStore == null || !settings.recordDetectionLogs) return
-        runCatching { logStore.open(source, info, settings.scanSettings, pipeline.config, expectedCount, videoName, notes) }
+        val store = logStore ?: return
+        if (!settings.recordDetectionLogs) return
+        runCatching { store.open(source, info, settings.scanSettings, pipeline.config, expectedCount, videoName, notes) }
             .onSuccess { (file, writer) ->
                 logFile = file
                 logWriter = writer
