@@ -44,6 +44,8 @@ jobs:
         run: |
           AAPT2="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt2"
           "$AAPT2" dump permissions app/build/outputs/apk/debug/app-debug.apk | tee permissions.txt
+          echo "--- declared by (manifest merger):"
+          grep -A1 "^uses-permission#" app/build/outputs/logs/manifest-merger-debug-report.txt || true
           grep -q "android.permission.CAMERA" permissions.txt
           if grep -q "android.permission.INTERNET" permissions.txt; then
             echo "::error::The APK requests INTERNET"; exit 1
