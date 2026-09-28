@@ -38,7 +38,8 @@ Without a model the app starts in "No trained model installed". Settings → Det
 1. **Stack size** 20 / 30 and **line mode**: *one side ×2* when the line is two pallets
    deep and you film it from one side (the hidden row is assumed to hold the same number),
    *whole line ×1* when every pallet of the line passes the camera.
-2. **START VIDEO SWEEP.** Landscape recommended (wider view = pallets stay visible longer).
+2. **START VIDEO SWEEP.** The scan screen turns to landscape (wider view = pallets stay
+   visible longer); hold the phone the same way. Portrait: Settings → Scan orientation.
 3. Start **before the first pallet**. Keep the wooden bases inside the dashed band
    ("KEEP PALLET BASES IN THIS AREA"), walk steadily. Stopping or stepping back is fine —
    walking back un-counts, walking forward counts again.

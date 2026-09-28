@@ -22,7 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,20 +30,20 @@ import com.palletcounter.app.data.Accelerator
 import com.palletcounter.app.data.AnalysisResolution
 import com.palletcounter.app.data.DetectorMode
 import com.palletcounter.app.data.RoiPreset
+import com.palletcounter.app.data.ScanOrientation
 
 @Composable
 fun SettingsScreen(vm: AppViewModel) {
-    val context = LocalContext.current
     val s by vm.settings.settings.collectAsStateWithLifecycle()
     var refresh by remember { mutableIntStateOf(0) }
     BackHandler { vm.navigate(Screen.Setup) }
     val importModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(vm::importModel) }
     val importSidecar = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(vm::importSidecar) }
     val exportLogs = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        uri?.let { context.contentResolver.openOutputStream(it)?.use(vm.logs::exportZip); vm.toast = "Logs exported" }
+        uri?.let { vm.export(it, "Logs", vm.logs::exportZip) }
     }
     val exportCaptures = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        uri?.let { context.contentResolver.openOutputStream(it)?.use(vm.captures::exportZip); vm.toast = "Captures exported" }
+        uri?.let { vm.export(it, "Captures", vm.captures::exportZip) }
     }
     fun set(transform: (com.palletcounter.app.data.AppSettings) -> com.palletcounter.app.data.AppSettings) = vm.settings.update(transform)
 
@@ -82,6 +81,14 @@ fun SettingsScreen(vm: AppViewModel) {
         ChoiceRow(listOf(2, 4, 6), s.cpuThreads, { "$it CPU threads" }, { v -> set { it.copy(cpuThreads = v) } }, Modifier.padding(top = 6.dp))
         SliderRow("Max detector rate", s.maxInferenceFps.toFloat(), 2f..30f, { "${it.toInt()} fps" }, { v -> set { it.copy(maxInferenceFps = v.toInt()) } })
         ChoiceRow(AnalysisResolution.entries, s.analysisResolution, { it.label }, { v -> set { it.copy(analysisResolution = v) } })
+
+        SectionTitle("Scan orientation")
+        ChoiceRow(ScanOrientation.entries, s.scanOrientation, { it.label }, { v -> set { it.copy(scanOrientation = v) } })
+        Text(
+            "The scan screen turns to this orientation; hold the phone the same way. Landscape keeps each pallet in view longer.",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.Gray,
+        )
 
         SectionTitle("Guide band (region of interest)")
         ChoiceRow(RoiPreset.entries.take(2), s.roiPreset, { it.label }, { v -> set { it.copy(roiPreset = v) } })

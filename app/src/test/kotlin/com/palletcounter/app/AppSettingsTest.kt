@@ -2,6 +2,7 @@ package com.palletcounter.app
 
 import com.palletcounter.app.data.AppSettings
 import com.palletcounter.app.data.RoiPreset
+import com.palletcounter.app.data.ScanOrientation
 import com.palletcounter.core.session.LineMode
 import com.palletcounter.core.session.StackSize
 import kotlinx.serialization.json.Json
@@ -48,5 +49,9 @@ class AppSettingsTest {
         assertEquals(s, back)
         // Unknown keys from a future version are ignored.
         assertEquals(AppSettings(), json.decodeFromString(AppSettings.serializer(), "{\"futureOption\":1}"))
+        // Settings saved before a field existed get its default (scan orientation: landscape).
+        val old = json.decodeFromString(AppSettings.serializer(), "{\"stackSize\":\"TWENTY\"}")
+        assertEquals(StackSize.TWENTY, old.stackSize)
+        assertEquals(ScanOrientation.LANDSCAPE, old.scanOrientation)
     }
 }

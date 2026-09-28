@@ -49,6 +49,36 @@ class TfliteYoloDetector(
         val (interp, label) = createInterpreter(model, accelerator, cpuThreads)
         interpreter = interp
         acceleratorLabel = label
+        try {
+            val parts = inspectModel()
+            preprocessor = parts.preprocessor
+            outputShape = parts.outputShape
+            outputType = parts.outputType
+            outputScale = parts.outputScale
+            outputZeroPoint = parts.outputZeroPoint
+            outputBuffer = parts.outputBuffer
+            outputFloats = parts.outputFloats
+            decoder = YoloDecoder(sidecar.toDecoderConfig(confidenceThreshold = decoderThreshold))
+            info = parts.info
+        } catch (t: Throwable) {
+            // Unsupported model: release the native interpreter/delegate before failing.
+            close()
+            throw t
+        }
+    }
+
+    private class ModelParts(
+        val preprocessor: Preprocessor,
+        val outputShape: IntArray,
+        val outputType: DataType,
+        val outputScale: Float,
+        val outputZeroPoint: Int,
+        val outputBuffer: ByteBuffer,
+        val outputFloats: FloatArray,
+        val info: DetectorInfo,
+    )
+
+    private fun inspectModel(): ModelParts {
         val input = interpreter.getInputTensor(0)
         val shape = input.shape()
         require(shape.size == 4 && shape[0] == 1) { "Unsupported input shape ${shape.contentToString()}" }
@@ -62,7 +92,7 @@ class TfliteYoloDetector(
             else -> throw IllegalArgumentException("Unsupported input type ${input.dataType()}")
         }
         val inQuant = input.quantizationParams()
-        preprocessor = Preprocessor(
+        val preprocessor = Preprocessor(
             inputWidth = inW,
             inputHeight = inH,
             type = inType,
@@ -73,15 +103,10 @@ class TfliteYoloDetector(
             quantZeroPoint = inQuant.zeroPoint,
         )
         val output = interpreter.getOutputTensor(0)
-        outputShape = output.shape()
-        outputType = output.dataType()
-        outputScale = output.quantizationParams().scale
-        outputZeroPoint = output.quantizationParams().zeroPoint
-        outputBuffer = ByteBuffer.allocateDirect(output.numBytes()).order(ByteOrder.nativeOrder())
-        outputFloats = FloatArray(output.numElements())
-        decoder = YoloDecoder(sidecar.toDecoderConfig(confidenceThreshold = decoderThreshold))
+        val outputShape = output.shape()
+        val outputType = output.dataType()
         val layout = YoloLayout.resolve(outputShape, inW, inH, sidecar.decoderFormat())
-        info = DetectorInfo(
+        val info = DetectorInfo(
             name = sidecar.name,
             kind = "tflite-yolo",
             inputWidth = inW,
@@ -96,22 +121,34 @@ class TfliteYoloDetector(
             ),
         )
         Log.i(TAG, "Loaded ${sidecar.name}: input ${shape.contentToString()} $inType, output ${outputShape.contentToString()} $outputType, $acceleratorLabel")
+        return ModelParts(
+            preprocessor = preprocessor,
+            outputShape = outputShape,
+            outputType = outputType,
+            outputScale = output.quantizationParams().scale,
+            outputZeroPoint = output.quantizationParams().zeroPoint,
+            outputBuffer = ByteBuffer.allocateDirect(output.numBytes()).order(ByteOrder.nativeOrder()),
+            outputFloats = FloatArray(output.numElements()),
+            info = info,
+        )
     }
 
     private fun createInterpreter(model: MappedByteBuffer, accelerator: Accelerator, threads: Int): Pair<Interpreter, String> {
         if (accelerator != Accelerator.CPU) {
+            var delegate: GpuDelegate? = null
             try {
-                val compat = CompatibilityList()
-                if (accelerator == Accelerator.GPU || compat.isDelegateSupportedOnThisDevice) {
-                    val delegate = GpuDelegate(compat.bestOptionsForThisDevice)
-                    val options = Interpreter.Options().addDelegate(delegate)
-                    val interp = Interpreter(model, options)
-                    gpuDelegate = delegate
-                    return interp to "GPU"
+                CompatibilityList().use { compat ->
+                    if (accelerator == Accelerator.GPU || compat.isDelegateSupportedOnThisDevice) {
+                        val d = GpuDelegate(compat.bestOptionsForThisDevice)
+                        delegate = d
+                        val interp = Interpreter(model, Interpreter.Options().addDelegate(d))
+                        gpuDelegate = d
+                        return interp to "GPU"
+                    }
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "GPU delegate unavailable, falling back to CPU", t)
-                gpuDelegate?.close()
+                runCatching { delegate?.close() }
                 gpuDelegate = null
             }
         }

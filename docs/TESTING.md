@@ -9,11 +9,12 @@
 | Golden decoder tests | raw output tensors recorded from **real exported LiteRT models** (raw and end-to-end heads) must decode exactly like the Python reference and match Ultralytics' predictions | part of `:core:test` (`YoloGoldenTest`) |
 | Real-model replay | detection log produced by `predict_video.py` with an exported model on a synthetic walk video (12 pallets, pause, walk back) must count 12 | part of `:core:test` (`PythonLogReplayTest`) |
 | Python tools | frame extraction/dedup/rotation, grouped split, dataset checker, decoder mirror, log writer | `python -m pytest` |
-| Android on-device | LiteRT with tiny test models (NCHW/NHWC, RGB order, normalisation, rotation, letterbox, GPU fallback); scan engine; full UI flow with emulated camera + simulation detector | `./gradlew :app:connectedDebugAndroidTest` (emulator/phone) |
+| Android unit tests | settings → ROI/pipeline mapping, settings JSON compatibility | `./gradlew :app:testDebugUnitTest` |
+| Android on-device | LiteRT with tiny test models (NCHW/NHWC, RGB order, normalisation, rotation, letterbox, GPU fallback); upright ↔ sensor pixel mapping; scan engine (count, safe double close, RESET splits the detection log and each part replays to its recorded count); full UI flow with emulated camera + simulation detector | `./gradlew :app:connectedDebugAndroidTest` (emulator/phone) |
 
 CI (`.github/workflows/ci.yml`) runs all of them on every push: core tests, APK build
-(downloadable artifact `pallet-counter-debug-apk`), Python tests and the instrumented tests
-on an API 34 emulator.
+(downloadable artifact `pallet-counter-debug-apk`) with a check that the APK requests no
+INTERNET permission, Python tests and the instrumented tests on an API 34 emulator.
 
 **What the tests cannot tell you:** how well a detector trained on your footage finds real
 pallets. That is measured with real test videos, below.

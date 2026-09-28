@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.palletcounter.app.data.DetectorMode
 import com.palletcounter.app.data.HistoryEntry
@@ -21,6 +22,7 @@ import com.palletcounter.core.session.CountResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.OutputStream
 
 sealed interface Screen {
     data object Setup : Screen
@@ -31,15 +33,39 @@ sealed interface Screen {
     data object Settings : Screen
 }
 
-class AppViewModel(app: Application) : AndroidViewModel(app) {
+/**
+ * Screens that are restored after the process was killed in the background (e.g. while the
+ * system camera or file picker was open, so its result still reaches the screen). A scan or
+ * a review cannot be restored and falls back to the setup screen.
+ */
+private fun Screen.saveKey(): String = when (this) {
+    Screen.Photo -> "photo"
+    Screen.VideoReplay -> "video"
+    Screen.Settings -> "settings"
+    else -> "setup"
+}
+
+private fun screenFromKey(key: String?): Screen = when (key) {
+    "photo" -> Screen.Photo
+    "video" -> Screen.VideoReplay
+    "settings" -> Screen.Settings
+    else -> Screen.Setup
+}
+
+class AppViewModel(app: Application, private val savedState: SavedStateHandle) : AndroidViewModel(app) {
     val settings = SettingsRepository(app)
     val history = HistoryRepository(app)
     val models = ModelManager(app)
     val captures = CaptureStore(app)
     val logs = LogStore(app)
 
-    var screen by mutableStateOf<Screen>(Screen.Setup)
-        private set
+    private var currentScreen by mutableStateOf(screenFromKey(savedState[SCREEN_KEY]))
+    var screen: Screen
+        get() = currentScreen
+        private set(value) {
+            currentScreen = value
+            savedState[SCREEN_KEY] = value.saveKey()
+        }
 
     var modelDescription by mutableStateOf<ModelDescription?>(null)
         private set
@@ -49,6 +75,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Live camera engine, created when the scan screen opens. */
     var engine: ScanEngine? = null
         private set
+
+    private var finishingEngine by mutableStateOf<ScanEngine?>(null)
+
+    /** True between FINISH and the review screen (the last frame is still being processed). */
+    val finishing: Boolean get() = finishingEngine.let { it != null && it === engine }
 
     var toast by mutableStateOf<String?>(null)
 
@@ -96,12 +127,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun finishLiveScan() {
         val e = engine ?: return
+        if (finishingEngine === e) return // FINISH tapped twice
+        finishingEngine = e
         viewModelScope.launch {
             val result = withContext(Dispatchers.Default) { runCatching { e.finish() } }
             e.close()
-            if (engine === e) engine = null
+            if (finishingEngine === e) finishingEngine = null
+            // The user may have left the scan screen meanwhile (back): then the scan is discarded.
+            if (engine !== e) return@launch
+            engine = null
             result.onSuccess { screen = Screen.Review(it) }
-                .onFailure { toast = "Could not finish scan: ${it.message}" }
+                .onFailure {
+                    toast = "Could not finish scan: ${it.message}"
+                    screen = Screen.Setup
+                }
         }
     }
 
@@ -143,6 +182,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Writes a ZIP of captures or logs to a user-chosen document, off the main thread. */
+    fun export(uri: Uri, what: String, write: (OutputStream) -> Unit) {
+        viewModelScope.launch {
+            toast = withContext(Dispatchers.IO) {
+                runCatching {
+                    val out = checkNotNull(getApplication<Application>().contentResolver.openOutputStream(uri)) { "cannot open the file" }
+                    out.use(write)
+                }.fold({ "$what exported" }, { "Export failed: ${it.message}" })
+            }
+        }
+    }
+
     fun removeImportedModel() {
         models.removeImported()
         toast = "Imported model removed"
@@ -151,5 +202,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         discardEngine()
+    }
+
+    private companion object {
+        const val SCREEN_KEY = "screen"
     }
 }

@@ -97,7 +97,9 @@ class ScanEngine(
 ) : FrameGate, AutoCloseable {
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "pallet-inference") }
     private val busy = AtomicBoolean(false)
+    /** No more frames are accepted (set by [finish] and [close]). */
     private val closed = AtomicBoolean(false)
+    private val shutDown = AtomicBoolean(false)
     private val pipeline = ScanPipeline(settings.pipelineConfig())
     private var detector: PalletDetector<FrameInput>? = null
     private var logWriter: DetectionLogWriter? = null
@@ -128,11 +130,7 @@ class ScanEngine(
             try {
                 val det = models.createDetector(settings, decoderThreshold = settings.lowThreshold)
                 detector = det
-                if (logStore != null && settings.recordDetectionLogs) {
-                    val (file, writer) = logStore.open(source, det.info, settings.scanSettings, pipeline.config, expectedCount, videoName)
-                    logFile = file
-                    logWriter = writer
-                }
+                openLog(det.info, notes = null)
                 _state.value = _state.value.copy(status = EngineStatus.RUNNING, detector = det.info)
             } catch (t: Throwable) {
                 Log.e(TAG, "detector init failed", t)
@@ -201,15 +199,50 @@ class ScanEngine(
         captureRequest = category
     }
 
-    /** Clears the count and tracks but keeps the detector loaded. */
+    /**
+     * Clears the count and tracks but keeps the detector loaded. The detection log is
+     * closed (its footer holds the count before the reset) and a new one is started, so each
+     * log still replays to the count it recorded.
+     */
     fun resetCount() {
-        worker.execute {
-            pipeline.reset()
-            pallets.clear()
-            lastCountFrame = null
-            lastCountSnapshot = null
-            _state.value = _state.value.copy(snapshot = null, message = "Count reset")
+        if (closed.get()) return
+        try {
+            worker.execute {
+                detector?.let { det ->
+                    closeLog()
+                    openLog(det.info, notes = "started by RESET during a scan")
+                }
+                pipeline.reset()
+                pallets.clear()
+                lastCountFrame = null
+                lastCountSnapshot = null
+                firstTimestamp = null
+                frames = 0
+                _state.value = _state.value.copy(snapshot = null, frames = 0, message = "Count reset")
+            }
+        } catch (e: RejectedExecutionException) {
+            // Engine already closed.
         }
+    }
+
+    private fun openLog(info: DetectorInfo, notes: String?) {
+        if (logStore == null || !settings.recordDetectionLogs) return
+        runCatching { logStore.open(source, info, settings.scanSettings, pipeline.config, expectedCount, videoName, notes) }
+            .onSuccess { (file, writer) ->
+                logFile = file
+                logWriter = writer
+            }
+            .onFailure { Log.w(TAG, "could not open detection log", it) }
+    }
+
+    private fun closeLog() {
+        logWriter?.let {
+            runCatching {
+                it.footer(LogFooter(count = pipeline.count, netCount = pipeline.netCount))
+                it.close()
+            }
+        }
+        logWriter = null
     }
 
     // ---- Worker thread ----
@@ -292,13 +325,7 @@ class ScanEngine(
         closed.set(true)
         val future = worker.submit<ScanResult> {
             val snap = pipeline.latest
-            logWriter?.let {
-                runCatching {
-                    it.footer(LogFooter(count = pipeline.count, netCount = pipeline.netCount))
-                    it.close()
-                }
-            }
-            logWriter = null
+            closeLog()
             ScanResult(
                 detectedCount = pipeline.count,
                 netCount = pipeline.netCount,
@@ -320,13 +347,19 @@ class ScanEngine(
         return result
     }
 
+    /** Releases the detector on its own thread. Safe to call more than once. */
     override fun close() {
         closed.set(true)
-        worker.execute {
-            runCatching { logWriter?.close() }
-            logWriter = null
-            runCatching { detector?.close() }
-            detector = null
+        if (!shutDown.compareAndSet(false, true)) return
+        try {
+            worker.execute {
+                runCatching { logWriter?.close() }
+                logWriter = null
+                runCatching { detector?.close() }
+                detector = null
+            }
+        } catch (e: RejectedExecutionException) {
+            // Already shut down.
         }
         worker.shutdown()
     }

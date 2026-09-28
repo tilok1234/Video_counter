@@ -1,13 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- No INTERNET permission on purpose: camera data cannot leave the device. -->
+    <!-- No INTERNET permission on purpose: camera data cannot leave the device. The removal
+         also strips it if a library ever tries to merge it in (CI checks the APK). -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
 
     <application
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.PalletCounter">

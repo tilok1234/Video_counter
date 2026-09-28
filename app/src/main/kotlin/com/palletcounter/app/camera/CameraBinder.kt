@@ -23,6 +23,8 @@ import java.util.concurrent.Executors
  */
 class CameraBinder(private val context: Context) {
     private var provider: ProcessCameraProvider? = null
+    /** Set when the scan screen is gone; a camera provider that arrives later must not bind. */
+    private var isShutdown = false
     private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "camera-analysis") }
 
     fun bind(
@@ -34,6 +36,7 @@ class CameraBinder(private val context: Context) {
     ) {
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
+            if (isShutdown) return@addListener
             try {
                 val cameraProvider = future.get()
                 provider = cameraProvider
@@ -73,7 +76,9 @@ class CameraBinder(private val context: Context) {
         provider?.unbindAll()
     }
 
+    /** Call on the main thread (like [bind]'s callback), so the two cannot race. */
     fun shutdown() {
+        isShutdown = true
         unbind()
         analysisExecutor.shutdown()
     }

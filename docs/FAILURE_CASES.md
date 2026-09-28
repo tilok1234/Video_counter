@@ -50,5 +50,8 @@ Diagnostics referenced below:
 * **Multi-tier stacks:** each visible wooden layer inside the ROI is counted. With the
   default centre band only the tiers inside the band count; use *Full height* to count all
   visible tiers, and label every tier consistently (annotation guide).
+* **Hold the phone the way the scan screen is shown.** If the screen is in landscape but
+  the phone is held upright, the frames are sideways: the model sees rotated bases and the
+  pallets move parallel to the count line, so nothing is counted.
 * **Real detection quality is unknown until trained on your footage.** Everything above the
   detector is tested; the detector itself is only as good as the data.

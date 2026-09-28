@@ -73,7 +73,10 @@ overlays never depend on camera resolution, phone orientation or model size.
 
 Preview and analysis use the same 4:3 field of view and the preview is shown with
 `FIT_CENTER`, so the overlay maps normalized boxes linearly onto the fitted preview rect.
-The scan screen locks the orientation while scanning (a rotation mid-scan would swap axes).
+The scan screen requests a fixed orientation (landscape by default, Settings → Scan
+orientation) and binds the camera only after the display has turned, because the camera's
+target rotation is taken from the display at bind time. Frames are therefore upright even
+when system auto-rotate is off, and no rotation can swap the axes mid-scan.
 
 ## Detector abstraction
 
@@ -175,6 +178,11 @@ The ROI and the count line are configurable in Settings and drawn on the preview
 * Detection logs contain boxes and scores only (no pixels).
 * Captures and logs leave the phone only via "Export … ZIP" through the system file picker.
 * Accepted counts are stored locally in `history.json`.
+* App data is excluded from cloud backup and from device-to-device transfer
+  (`data_extraction_rules.xml`), and the recent-apps snapshot is disabled (Android 13+),
+  because screens show camera frames and pallet thumbnails.
+* The manifest strips `INTERNET` even if a library tries to add it; CI checks the APK's
+  permissions.
 
 ## Extending
 

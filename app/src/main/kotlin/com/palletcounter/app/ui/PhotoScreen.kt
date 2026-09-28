@@ -1,5 +1,7 @@
 package com.palletcounter.app.ui
 
+import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -28,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,13 +86,21 @@ fun PhotoScreen(vm: AppViewModel) {
     var detectorName by remember { mutableStateOf("?") }
     BackHandler { vm.navigate(Screen.Setup) }
 
+    val photoFile = remember { File(context.cacheDir, "photos").apply { mkdirs() }.resolve("capture.jpg") }
+    val photoUri = remember { FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photoFile) }
+
     fun analyze(uri: Uri) {
         busy = true
         error = null
         scope.launch {
             val outcome = withContext(Dispatchers.Default) {
                 runCatching {
-                    val bmp = decodeUpright(context, uri, maxSide = 2048)
+                    val bmp = try {
+                        decodeUpright(context, uri, maxSide = 2048)
+                    } finally {
+                        // The camera photo is only needed in memory; do not keep it on disk.
+                        if (uri == photoUri) photoFile.delete()
+                    }
                     check(settings.detectorMode != DetectorMode.SIMULATION) { "Photo mode needs a trained model (the simulation detector has nothing to detect)." }
                     // Create, run and close on this thread (GPU delegates are thread-bound).
                     val detector = vm.models.createDetector(settings, decoderThreshold = 0.1f)
@@ -112,9 +123,32 @@ fun PhotoScreen(vm: AppViewModel) {
         }
     }
 
-    val photoFile = remember { File(context.cacheDir, "photos").apply { mkdirs() }.resolve("capture.jpg") }
-    val photoUri = remember { FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photoFile) }
-    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) analyze(photoUri) }
+    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        if (ok) {
+            analyze(photoUri)
+        } else {
+            photoFile.delete()
+        }
+    }
+    fun launchCamera() {
+        try {
+            takePicture.launch(photoUri)
+        } catch (e: ActivityNotFoundException) {
+            error = "No camera app found. Use 'Choose image'."
+        } catch (e: SecurityException) {
+            error = "Camera permission is needed to take a photo."
+        }
+    }
+    // The system camera app may only be started once this app holds the camera permission
+    // (it declares CAMERA), otherwise Android throws a SecurityException.
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            launchCamera()
+        } else {
+            error = "Camera permission denied. Allow it in the app settings or use 'Choose image'."
+        }
+    }
+    DisposableEffect(Unit) { onDispose { photoFile.delete() } }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { it?.let(::analyze) }
 
     val visible = detections.withIndex().filter { it.value.confidence >= threshold }
@@ -125,7 +159,11 @@ fun PhotoScreen(vm: AppViewModel) {
         Text("Photo mode", fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Text("Static photos are less reliable than a video sweep. Tap a box to exclude it.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { takePicture.launch(photoUri) }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Take photo") }
+            Button(
+                onClick = { if (context.hasCameraPermission()) launchCamera() else cameraPermission.launch(Manifest.permission.CAMERA) },
+                enabled = !busy,
+                modifier = Modifier.weight(1f),
+            ) { Text("Take photo") }
             OutlinedButton(onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Choose image") }
         }
         if (busy) Text("Detecting…", color = Palette.Accent)

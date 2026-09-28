@@ -64,8 +64,9 @@ fun SetupScreen(vm: AppViewModel) {
             enabled = !noModel,
         ) { Text("START VIDEO SWEEP", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
         Text(
-            "Landscape recommended. Start before the first pallet, walk steadily along the line with the pallet " +
-                "bases inside the band, and finish after the last pallet has crossed the yellow line.",
+            "The scan screen turns to ${settings.scanOrientation.label.substringBefore(" (").lowercase()}: hold the phone the same way. " +
+                "Start before the first pallet, walk steadily along the line with the pallet bases inside the band, " +
+                "and finish after the last pallet has crossed the yellow line.",
             style = MaterialTheme.typography.bodySmall,
             color = Color.Gray,
             modifier = Modifier.padding(top = 6.dp),

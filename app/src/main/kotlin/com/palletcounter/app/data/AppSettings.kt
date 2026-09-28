@@ -21,6 +21,14 @@ enum class AnalysisResolution(val width: Int, val height: Int, val label: String
     HIGH(1280, 960, "1280×960 (sharper captures)"),
 }
 
+/**
+ * Screen orientation of the scan screen. It is requested explicitly (not just locked) so the
+ * analysed frames are upright even when system auto-rotate is off; pallets must move
+ * horizontally through the frame to cross the vertical count line.
+ */
+@Serializable
+enum class ScanOrientation(val label: String) { LANDSCAPE("Landscape (recommended)"), PORTRAIT("Portrait") }
+
 /** Region-of-interest presets; the guide band shown while scanning. */
 @Serializable
 enum class RoiPreset(val label: String, val top: Float, val bottom: Float) {
@@ -40,6 +48,7 @@ data class AppSettings(
     val cpuThreads: Int = 4,
     val maxInferenceFps: Int = 10,
     val analysisResolution: AnalysisResolution = AnalysisResolution.HIGH,
+    val scanOrientation: ScanOrientation = ScanOrientation.LANDSCAPE,
     val roiPreset: RoiPreset = RoiPreset.CENTER_BAND,
     val customRoiTop: Float = 0.25f,
     val customRoiBottom: Float = 0.85f,

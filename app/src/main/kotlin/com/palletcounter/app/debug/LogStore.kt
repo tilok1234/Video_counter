@@ -21,9 +21,18 @@ import java.util.TimeZone
 class LogStore(context: Context) {
     val dir = File(context.filesDir, "scan_logs").apply { mkdirs() }
 
-    fun open(source: String, detector: DetectorInfo?, settings: ScanSettings, pipeline: PipelineConfig, expectedCount: Int?, video: String?): Pair<File, DetectionLogWriter> {
+    fun open(
+        source: String,
+        detector: DetectorInfo?,
+        settings: ScanSettings,
+        pipeline: PipelineConfig,
+        expectedCount: Int?,
+        video: String?,
+        notes: String? = null,
+    ): Pair<File, DetectionLogWriter> {
         prune()
-        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.ROOT).format(Date())
+        // Milliseconds: a RESET right after the start must not overwrite the first log.
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.ROOT).format(Date())
         val file = File(dir, "scan_${stamp}_$source.jsonl")
         val writer = DetectionLogWriter(file.bufferedWriter())
         val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ROOT).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date())
@@ -36,6 +45,7 @@ class LogStore(context: Context) {
                 pipeline = pipeline,
                 expectedCount = expectedCount,
                 video = video,
+                notes = notes,
             ),
         )
         return file to writer

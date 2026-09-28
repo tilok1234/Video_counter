@@ -115,34 +115,38 @@ fun VideoReplayScreen(vm: AppViewModel) {
                 )
                 engine = e
                 job = scope.launch {
-                    val outcome = withContext(Dispatchers.Default) {
-                        runCatching {
-                            e.start()
-                            check(e.awaitReady()) { e.state.value.error ?: "detector failed to load" }
-                            VideoFrameSource(context, videoUri, fps.toDouble(), rotation).use { src ->
-                                val total = src.frameCount
-                                var i = 0
-                                while (isActive) {
-                                    val frame = src.frame(i) ?: break
-                                    e.processBlocking(frame)
-                                    if (i % 3 == 0) preview.value = frame.uprightCrop(maxSide = 720)
-                                    i++
-                                    progress = (i.toFloat() / total).coerceAtMost(1f)
+                    try {
+                        val outcome = withContext(Dispatchers.Default) {
+                            runCatching {
+                                e.start()
+                                check(e.awaitReady()) { e.state.value.error ?: "detector failed to load" }
+                                VideoFrameSource(context, videoUri, fps.toDouble(), rotation).use { src ->
+                                    val total = src.frameCount
+                                    var i = 0
+                                    while (isActive) {
+                                        val frame = src.frame(i) ?: break
+                                        e.processBlocking(frame)
+                                        if (i % 3 == 0) preview.value = frame.uprightCrop(maxSide = 720)
+                                        i++
+                                        progress = (i.toFloat() / total).coerceAtMost(1f)
+                                    }
                                 }
+                                e.finish()
                             }
-                            e.finish()
                         }
+                        outcome.onSuccess { vm.showReview(it) }.onFailure { error = it.message ?: it.toString() }
+                    } finally {
+                        // Also runs on Cancel (withContext then throws CancellationException).
+                        e.close()
+                        if (engine === e) engine = null
+                        running = false
                     }
-                    running = false
-                    e.close()
-                    engine = null
-                    outcome.onSuccess { vm.showReview(it) }.onFailure { error = it.message ?: it.toString() }
                 }
             },
         ) { Text(if (running) "Processing…" else "Start replay") }
         if (running) {
             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
-            OutlinedButton(onClick = { job?.cancel(); running = false }) { Text("Cancel") }
+            OutlinedButton(onClick = { job?.cancel() }) { Text("Cancel") }
         }
         val state: ScanUiState? = engine?.state?.collectAsStateWithLifecycle()?.value
         Text("Count: ${state?.snapshot?.count ?: 0}", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Palette.Accent)
