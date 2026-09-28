@@ -1,0 +1,32 @@
+# Temporary: prints the preinstalled Android SDK and current Google Maven
+# versions so dependency versions can be chosen from real data.
+name: probe-environment
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/probe.yml
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Android SDK / JDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME" || true
+          echo "--- platforms"; ls "$ANDROID_HOME/platforms" || true
+          echo "--- build-tools"; ls "$ANDROID_HOME/build-tools" || true
+          echo "--- system-images"; ls -R "$ANDROID_HOME/system-images" 2>/dev/null | head -40 || true
+          echo "--- jvm"; ls /usr/lib/jvm || true
+          env | grep -E '^JAVA_HOME' || true
+          ls -l /dev/kvm || echo "no /dev/kvm"
+          nproc; free -g
+      - name: Google Maven versions
+        run: |
+          M=https://dl.google.com/dl/android/maven2
+          for g in com/android/tools/build androidx/compose androidx/compose/ui androidx/compose/material3 androidx/camera com/google/ai/edge/litert androidx/activity androidx/lifecycle androidx/core androidx/test androidx/test/ext androidx/test/espresso androidx/exifinterface androidx/benchmark; do
+            echo "=== $g"
+            curl -s "$M/$g/group-index.xml" | tr -d '\r' \
+              | sed -n 's/^ *<\([a-zA-Z0-9._-]*\) versions="\([^"]*\)".*/\1|\2/p' \
+              | awk -F'|' '{n=split($2,v,","); s=""; for(i=(n>8?n-7:1);i<=n;i++) s=s v[i] " "; print "  " $1 ": " s}'
+          done

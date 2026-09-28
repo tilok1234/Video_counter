@@ -1,0 +1,71 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PRIVACY: this repository is PUBLIC.
+# Workplace photos, videos, datasets, captured samples and trained weights must
+# never be committed. They are ignored below on purpose. Keep them on your own
+# machine / phone. See docs/DATA_COLLECTION.md.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Dataset content (structure is kept via .gitkeep files)
+dataset/images/**
+dataset/labels/**
+dataset/raw/**
+dataset/candidates/**
+!dataset/**/
+!dataset/**/.gitkeep
+dataset/*.cache
+dataset/**/*.cache
+
+# Raw footage and exported app captures
+videos/
+raw_videos/
+captures/
+exports/
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.avi
+*.mkv
+*.3gp
+*.webm
+
+# Model weights / exports (import models into the app instead of committing them)
+*.pt
+*.pth
+*.onnx
+*.tflite
+*.engine
+*.torchscript
+*_saved_model/
+model/*
+!model/README.md
+!model/model.example.json
+app/src/main/assets/models/*
+!app/src/main/assets/models/README.md
+# Small synthetic test fixtures are allowed explicitly:
+!core/src/test/resources/**
+!app/src/androidTest/assets/**
+
+# Ultralytics / Python
+runs/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Gradle / Android / IDE
+.gradle/
+.kotlin/
+build/
+local.properties
+*.iml
+.idea/
+.DS_Store
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.jks
+*.keystore
