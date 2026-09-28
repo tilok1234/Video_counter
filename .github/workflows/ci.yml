@@ -86,6 +86,10 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back emulated
           disable-animations: true
           script: ./gradlew :app:connectedDebugAndroidTest --console=plain
+      - name: Print instrumented test results
+        if: always()
+        run: |
+          find app/build/outputs/androidTest-results -name "*.xml" -print -exec cat {} + || true
       - name: Instrumented test reports
         if: always()
         uses: actions/upload-artifact@v5
