@@ -14,7 +14,9 @@
 
 CI (`.github/workflows/ci.yml`) runs all of them on every push: core tests, APK build
 (downloadable artifact `pallet-counter-debug-apk`) with a check that the APK requests no
-INTERNET permission, Python tests and the instrumented tests on an API 34 emulator.
+permission except the camera, Python tests and the instrumented tests on an API 34
+emulator (the full UI flow three times, to catch intermittent failures; logcat crashes are
+printed into the job log).
 
 **What the tests cannot tell you:** how well a detector trained on your footage finds real
 pallets. That is measured with real test videos, below.

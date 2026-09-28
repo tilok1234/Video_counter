@@ -8,6 +8,9 @@
     <!-- No INTERNET permission on purpose: camera data cannot leave the device. The removal
          also strips it if a library ever tries to merge it in (CI checks the APK). -->
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <!-- Merged in from androidx.media3 (via CameraX) for media playback, which this app does not
+         use. The app needs nothing but the camera. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 
     <application
         android:allowBackup="false"

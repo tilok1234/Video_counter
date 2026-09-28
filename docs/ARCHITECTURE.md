@@ -181,8 +181,8 @@ The ROI and the count line are configurable in Settings and drawn on the preview
 * App data is excluded from cloud backup and from device-to-device transfer
   (`data_extraction_rules.xml`), and the recent-apps snapshot is disabled (Android 13+),
   because screens show camera frames and pallet thumbnails.
-* The manifest strips `INTERNET` even if a library tries to add it; CI checks the APK's
-  permissions.
+* The manifest strips `INTERNET` (and `ACCESS_NETWORK_STATE`, merged in by a media library)
+  even if a library tries to add them; CI fails if the APK requests anything but the camera.
 
 ## Extending
 

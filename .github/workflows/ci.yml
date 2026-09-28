@@ -40,16 +40,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
       - name: Assemble debug APK + app unit tests
         run: ./gradlew :app:assembleDebug :app:testDebugUnitTest --console=plain
-      - name: Check APK permissions (camera only, no INTERNET)
+      - name: Check APK permissions (camera only)
         run: |
           AAPT2="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt2"
           "$AAPT2" dump permissions app/build/outputs/apk/debug/app-debug.apk | tee permissions.txt
           echo "--- declared by (manifest merger):"
           grep -A1 "^uses-permission#" app/build/outputs/logs/manifest-merger-debug-report.txt || true
-          grep -q "android.permission.CAMERA" permissions.txt
-          if grep -q "android.permission.INTERNET" permissions.txt; then
-            echo "::error::The APK requests INTERNET"; exit 1
-          fi
+          grep -q "name='android.permission.CAMERA'" permissions.txt
+          # Allowed: CAMERA and AndroidX's app-internal receiver permission. Anything else
+          # (INTERNET above all) fails the build.
+          extra=$(grep "^uses-permission:" permissions.txt | grep -v "name='android.permission.CAMERA'" | grep -v "DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" || true)
+          if [ -n "$extra" ]; then echo "::error::Unexpected permissions: $extra"; exit 1; fi
       - name: Upload debug APK
         uses: actions/upload-artifact@v5
         with:
