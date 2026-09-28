@@ -1,5 +1,6 @@
 plugins {
-    alias(libs.plugins.android.application)
+    // Version comes from the root buildscript classpath (see ../build.gradle.kts).
+    id("com.android.application")
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
