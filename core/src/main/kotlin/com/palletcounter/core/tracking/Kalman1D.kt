@@ -64,6 +64,29 @@ internal class Kalman1D(
     }
 }
 
+/**
+ * Random-walk filter (position only) used for box width/height. Sizes change slowly and
+ * erratically (partial visibility at frame edges, detector noise); giving them a velocity
+ * lets a single bad measurement make the box grow or collapse on its own.
+ */
+internal class RandomWalk1D(value: Double, variance: Double) {
+    var value: Double = value
+        private set
+    private var p = variance
+
+    fun predict(dt: Double, stdPerSqrtSecond: Double) {
+        if (dt > 0.0) p += stdPerSqrtSecond * stdPerSqrtSecond * dt
+    }
+
+    fun update(measurement: Double, measurementVariance: Double) {
+        val s = p + measurementVariance
+        if (s <= 0.0) return
+        val k = p / s
+        value += k * (measurement - value)
+        p *= (1.0 - k)
+    }
+}
+
 /** Box filter over (cx, cy, w, h) in normalized frame coordinates. */
 internal class BoxFilter(
     box: Box,
@@ -74,8 +97,8 @@ internal class BoxFilter(
 ) {
     private val cx: Kalman1D
     private val cy: Kalman1D
-    private val w: Kalman1D
-    private val h: Kalman1D
+    private val w: RandomWalk1D
+    private val h: RandomWalk1D
 
     init {
         val sx = max(box.width, MIN_SCALE).toDouble()
@@ -84,36 +107,40 @@ internal class BoxFilter(
         val vs = velocityStdInBoxes.toDouble()
         cx = Kalman1D(box.centerX.toDouble(), velocityX.toDouble(), sq(m * sx), sq(vs * sx))
         cy = Kalman1D(box.centerY.toDouble(), velocityY.toDouble(), sq(m * sy), sq(vs * sy))
-        w = Kalman1D(box.width.toDouble(), 0.0, sq(m * sx), sq(0.1 * sx))
-        h = Kalman1D(box.height.toDouble(), 0.0, sq(m * sy), sq(0.1 * sy))
+        w = RandomWalk1D(box.width.toDouble(), sq(m * sx))
+        h = RandomWalk1D(box.height.toDouble(), sq(m * sy))
     }
 
     val box: Box
         get() = Box.fromCenter(
             cx.position.toFloat(),
             cy.position.toFloat(),
-            max(w.position.toFloat(), MIN_SCALE),
-            max(h.position.toFloat(), MIN_SCALE),
+            max(w.value.toFloat(), MIN_SCALE),
+            max(h.value.toFloat(), MIN_SCALE),
         )
 
     val velocityX: Float get() = cx.velocity.toFloat()
     val velocityY: Float get() = cy.velocity.toFloat()
 
     fun predict(dt: Double) {
-        val sx = max(w.position, MIN_SCALE.toDouble())
-        val sy = max(h.position, MIN_SCALE.toDouble())
+        val sx = max(w.value, MIN_SCALE.toDouble())
+        val sy = max(h.value, MIN_SCALE.toDouble())
         val a = config.accelerationNoise.toDouble()
-        val sa = config.sizeAccelerationNoise.toDouble()
+        val sn = config.sizeNoise.toDouble()
         cx.predict(dt, a * sx)
         cy.predict(dt, a * sy)
-        w.predict(dt, sa * sx)
-        h.predict(dt, sa * sy)
+        w.predict(dt, sn * sx)
+        h.predict(dt, sn * sy)
     }
 
+    /**
+     * Measurement noise is scaled by the track's own size, not the measurement's, so a
+     * much smaller (wrong) box cannot claim a tiny variance and dominate the estimate.
+     */
     fun update(box: Box) {
         val m = config.measurementNoise.toDouble()
-        val sx = max(box.width, MIN_SCALE).toDouble()
-        val sy = max(box.height, MIN_SCALE).toDouble()
+        val sx = max(w.value, MIN_SCALE.toDouble())
+        val sy = max(h.value, MIN_SCALE.toDouble())
         cx.update(box.centerX.toDouble(), sq(m * sx))
         cy.update(box.centerY.toDouble(), sq(m * sy))
         w.update(box.width.toDouble(), sq(m * sx))
@@ -121,8 +148,8 @@ internal class BoxFilter(
     }
 
     fun overrideVelocity(vx: Float, vy: Float) {
-        val sx = max(w.position, MIN_SCALE.toDouble())
-        val sy = max(h.position, MIN_SCALE.toDouble())
+        val sx = max(w.value, MIN_SCALE.toDouble())
+        val sy = max(h.value, MIN_SCALE.toDouble())
         cx.overrideVelocity(vx.toDouble(), sq(0.3 * sx))
         cy.overrideVelocity(vy.toDouble(), sq(0.3 * sy))
     }

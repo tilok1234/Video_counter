@@ -2,7 +2,9 @@ package com.palletcounter.core.tracking
 
 import com.palletcounter.core.detection.Detection
 import com.palletcounter.core.detection.DetectionFrame
+import com.palletcounter.core.geometry.Box
 import kotlinx.serialization.Serializable
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -25,10 +27,19 @@ data class TrackerConfig(
     val lostMatchMinDiou: Float = -0.1f,
     /** Minimum IoU when extending a confirmed track with a low-score detection. */
     val secondMatchMinIou: Float = 0.4f,
+    /** Minimum IoU for recovering a just-lost track with a low-score detection. */
+    val lostLowMatchMinIou: Float = 0.5f,
+    /** Lost tracks missed at most this many frames may take low-score detections. */
+    val lostLowMatchMaxMissedFrames: Int = 3,
     /** Minimum IoU for matching tentative tracks. */
     val tentativeMatchMinIou: Float = 0.3f,
-    /** Height ratio limit when re-associating lost tracks (guards against far-row boxes). */
-    val maxSizeRatioForLostMatch: Float = 1.6f,
+    /**
+     * Largest height ratio between a track and a detection it may be matched with (guards
+     * against far-row boxes and unrelated false positives).
+     */
+    val maxHeightRatio: Float = 1.6f,
+    /** Largest width ratio; looser than height because pallets are cut off at frame edges. */
+    val maxWidthRatio: Float = 2.2f,
     /** Weight association similarity by detection score (ByteTrack "fuse score"). */
     val fuseScore: Boolean = true,
     /** Matched frames needed before a track is CONFIRMED. */
@@ -43,7 +54,8 @@ data class TrackerConfig(
     val measurementNoise: Float = 0.05f,
     /** Acceleration noise std in box sizes per second squared. */
     val accelerationNoise: Float = 2.0f,
-    val sizeAccelerationNoise: Float = 0.5f,
+    /** Random-walk noise of box size in box sizes per sqrt(second). */
+    val sizeNoise: Float = 0.3f,
     /** Initial velocity std (box sizes / s) when the camera motion is known / unknown. */
     val velocityPriorStd: Float = 0.3f,
     val unknownVelocityStd: Float = 1.5f,
@@ -53,6 +65,17 @@ data class TrackerConfig(
     val motionHoldMillis: Long = 700,
     /** Smoothing factor for the camera-motion estimate (1 = no smoothing). */
     val motionSmoothing: Float = 0.5f,
+    /**
+     * Re-associate after a sudden camera jerk: when normal gating fails for recently seen
+     * tracks, try the offsets implied by (track, detection) pairs and accept one that
+     * explains at least two matches (or one, if it agrees with the walking direction).
+     */
+    val globalShiftRecovery: Boolean = true,
+    val shiftMatchMinIou: Float = 0.4f,
+    /** Largest jerk considered, as a fraction of the frame width. */
+    val maxShiftFraction: Float = 0.35f,
+    /** Single-track shifts are only accepted up to this many box widths. */
+    val maxSingleShiftBoxWidths: Float = 1.0f,
 )
 
 /**
@@ -150,11 +173,32 @@ class ByteTracker(val config: TrackerConfig = TrackerConfig()) {
             usedHigh[di] = true
         }
 
-        // 2) Low-score detections vs remaining confirmed (not lost) tracks.
-        val remainingConfirmed = pool.filter { it !in matchedTracks && it.state == TrackState.CONFIRMED }
+        // 1b) Camera-jerk recovery for tracks that were visible a moment ago.
+        if (config.globalShiftRecovery) {
+            val candidates = pool.filter { it !in matchedTracks && it.missedFrames <= 1 }
+            val detIdx = high.indices.filter { !usedHigh[it] }
+            val detList = detIdx.map { high[it] }
+            for ((ti, dj) in recoverGlobalShift(candidates, detList, currentMotion(now))) {
+                candidates[ti].update(detList[dj], now, MatchStage.SHIFT)
+                candidates[ti].state = TrackState.CONFIRMED
+                matchedTracks += candidates[ti]
+                usedHigh[detIdx[dj]] = true
+            }
+        }
+
+        // 2) Low-score detections vs remaining confirmed tracks and just-lost tracks
+        //    (motion blur mostly lowers confidence rather than removing the detection).
+        val remainingConfirmed = pool.filter {
+            it !in matchedTracks && (
+                it.state == TrackState.CONFIRMED ||
+                    (it.state == TrackState.LOST && it.missedFrames <= config.lostLowMatchMaxMissedFrames)
+                )
+        }
         for ((ti, di) in associate(remainingConfirmed, low, Stage.SECOND)) {
-            remainingConfirmed[ti].update(low[di], now, MatchStage.LOW)
-            matchedTracks += remainingConfirmed[ti]
+            val t = remainingConfirmed[ti]
+            t.update(low[di], now, MatchStage.LOW)
+            t.state = TrackState.CONFIRMED
+            matchedTracks += t
             usedLow[di] = true
         }
 
@@ -259,15 +303,18 @@ class ByteTracker(val config: TrackerConfig = TrackerConfig()) {
                 val d = dets[j]
                 val similarity: Float
                 val feasible: Boolean
-                if (stage == Stage.FIRST && t.state == TrackState.LOST) {
+                if (!sizeCompatible(tb, d.box)) {
+                    similarity = 0f
+                    feasible = false
+                } else if (stage == Stage.FIRST && t.state == TrackState.LOST) {
                     similarity = tb.diou(d.box)
-                    val ratio = max(tb.height, d.box.height) / max(1e-4f, min(tb.height, d.box.height))
-                    feasible = similarity >= config.lostMatchMinDiou && ratio <= config.maxSizeRatioForLostMatch
+                    feasible = similarity >= config.lostMatchMinDiou
                 } else {
                     similarity = tb.iou(d.box)
                     val minIou = when (stage) {
                         Stage.FIRST -> config.firstMatchMinIou
-                        Stage.SECOND -> config.secondMatchMinIou
+                        Stage.SECOND ->
+                            if (t.state == TrackState.LOST) config.lostLowMatchMinIou else config.secondMatchMinIou
                         Stage.TENTATIVE -> config.tentativeMatchMinIou
                     }
                     feasible = similarity >= minIou
@@ -281,6 +328,54 @@ class ByteTracker(val config: TrackerConfig = TrackerConfig()) {
             }
         }
         return Hungarian.solve(cost)
+    }
+
+    private fun sizeCompatible(a: Box, b: Box): Boolean {
+        val rh = max(a.height, b.height) / max(1e-4f, min(a.height, b.height))
+        val rw = max(a.width, b.width) / max(1e-4f, min(a.width, b.width))
+        return rh <= config.maxHeightRatio && rw <= config.maxWidthRatio
+    }
+
+    private fun recoverGlobalShift(
+        candidates: List<Track>,
+        dets: List<Detection>,
+        motion: MotionEstimate,
+    ): List<Pair<Int, Int>> {
+        if (candidates.isEmpty() || dets.isEmpty()) return emptyList()
+        var best: List<Pair<Int, Int>> = emptyList()
+        var bestIou = 0f
+        var bestDx = 0f
+        for (t in candidates) {
+            val tb = t.box
+            for (d in dets) {
+                if (!sizeCompatible(tb, d.box)) continue
+                val dx = d.box.centerX - tb.centerX
+                val dy = d.box.centerY - tb.centerY
+                if (abs(dx) > config.maxShiftFraction || abs(dy) > tb.height) continue
+                val cost = Array(candidates.size) { i ->
+                    val shifted = candidates[i].box.translated(dx, dy)
+                    FloatArray(dets.size) { j ->
+                        val iou = shifted.iou(dets[j].box)
+                        if (iou >= config.shiftMatchMinIou && sizeCompatible(shifted, dets[j].box)) 1f - iou
+                        else Hungarian.INFEASIBLE
+                    }
+                }
+                val matches = Hungarian.solve(cost)
+                val meanIou = if (matches.isEmpty()) 0f else matches.sumOf { (i, j) -> (1f - cost[i][j]).toDouble() }.toFloat() / matches.size
+                if (matches.size > best.size || (matches.size == best.size && meanIou > bestIou)) {
+                    best = matches
+                    bestIou = meanIou
+                    bestDx = dx
+                }
+            }
+        }
+        if (best.size >= 2) return best
+        if (best.size == 1 && candidates.size == 1 && dets.size == 1 && motion.valid) {
+            val w = candidates[0].box.width
+            val sameDirection = bestDx * motion.vx > 0f
+            if (sameDirection && abs(bestDx) <= config.maxSingleShiftBoxWidths * w) return best
+        }
+        return emptyList()
     }
 
     private fun updateMotion(now: Long) {

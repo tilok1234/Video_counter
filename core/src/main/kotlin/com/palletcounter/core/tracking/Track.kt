@@ -21,7 +21,7 @@ enum class TrackState {
 
 /** Which association stage last matched a track; shown in the debug overlay. */
 @Serializable
-enum class MatchStage { BIRTH, HIGH, LOW, TENTATIVE, RECOVERED }
+enum class MatchStage { BIRTH, HIGH, LOW, TENTATIVE, SHIFT, RECOVERED }
 
 /**
  * A tracked physical object. Mutable, owned by [ByteTracker]; the pipeline exposes
