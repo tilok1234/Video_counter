@@ -1,7 +1,9 @@
 package com.palletcounter.app.ui
 
 import android.widget.Toast
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,13 +21,17 @@ fun AppRoot(vm: AppViewModel) {
     }
     PalletTheme {
         Surface(Modifier.fillMaxSize()) {
-            when (val screen = vm.screen) {
-                Screen.Setup -> SetupScreen(vm)
-                Screen.Scan -> ScanScreen(vm)
-                is Screen.Review -> ReviewScreen(vm, screen.result)
-                Screen.Photo -> PhotoScreen(vm)
-                Screen.VideoReplay -> VideoReplayScreen(vm)
-                Screen.Settings -> SettingsScreen(vm)
+            // Keep every screen clear of the status bar, navigation bar (at the side in
+            // landscape), display cutout and keyboard.
+            Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+                when (val screen = vm.screen) {
+                    Screen.Setup -> SetupScreen(vm)
+                    Screen.Scan -> ScanScreen(vm)
+                    is Screen.Review -> ReviewScreen(vm, screen.result)
+                    Screen.Photo -> PhotoScreen(vm)
+                    Screen.VideoReplay -> VideoReplayScreen(vm)
+                    Screen.Settings -> SettingsScreen(vm)
+                }
             }
         }
     }
